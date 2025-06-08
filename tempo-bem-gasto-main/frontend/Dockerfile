@@ -1,33 +1,20 @@
 # ───────────────────────────────────────────────────────────────────────────────
-#  Etapa 1: Build da aplicação React
-# ───────────────────────────────────────────────────────────────────────────────
-FROM node:16-alpine AS build
-
-# Define diretório de trabalho
-WORKDIR /app
-
-# Copia package.json e package-lock.json para instalar dependências
-COPY package.json package-lock.json ./
-
-# Instala dependências exatas usando npm ci (clean install)
-RUN npm ci
-
-# Copia todo o restante do código-fonte do frontend
-COPY . .
-
-# Gera a versão otimizada para produção (build estático em /app/build)
-RUN npm run build
-
-# ───────────────────────────────────────────────────────────────────────────────
-#  Etapa 2: Serve os arquivos estáticos com Nginx
+#   Etapa 1: Serve os arquivos estáticos com Nginx (AGORA RECEBENDO O BUILD LOCAL)
 # ───────────────────────────────────────────────────────────────────────────────
 FROM nginx:stable-alpine
+
+# Define diretório de trabalho (opcional, mas bom ter)
+WORKDIR /usr/share/nginx/html
 
 # Remove qualquer conteúdo default do /usr/share/nginx/html
 RUN rm -rf /usr/share/nginx/html/*
 
-# Copia os arquivos gerados no stage “build” para onde o Nginx espera
-COPY --from=build /app/build /usr/share/nginx/html
+# Copia os arquivos gerados LOCALMENTE para onde o Nginx espera
+# ATENÇÃO: ESTE COMANDO AGORA ESPERA QUE VOCÊ JÁ TENHA RODADO 'npm run build' LOCALMENTE
+COPY build/ .
+
+# Copia a configuração personalizada do Nginx
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Expõe a porta 80 para servir estático
 EXPOSE 80

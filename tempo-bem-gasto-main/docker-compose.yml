@@ -28,16 +28,14 @@ services:
     depends_on:
       - mysql
 
-  frontend:
+  frontend: # <--- ESTE SERVIÇO ESTAVA FALTANDO! ELE DEVE ESTAR AQUI.
     build:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:80"
-    environment:
-      - REACT_APP_API_URL=http://backend:8000
+      - "3000:80" # Mapeia a porta 3000 do host para a porta 80 do contêiner (onde Nginx serve)
     depends_on:
-      - backend
+      - backend # Garante que o backend suba antes do frontend
 
 volumes:
   mysql_data:
