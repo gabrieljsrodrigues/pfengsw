@@ -14,7 +14,13 @@ const parseDateString = (dateString) => {
     if (!dateString) return null;
     const [day, month, year] = dateString.split('/').map(Number);
     // Mês é 0-indexado no JavaScript
-    return new Date(year, month - 1, day);
+    const date = new Date(year, month - 1, day);
+    // Verificar se a data é válida (e.g., 31 de fev vira 2 de mar ou 40 de out)
+    // Se o ano, mês ou dia do objeto Date não corresponder ao que foi passado, é inválido
+    if (date.getFullYear() !== year || date.getMonth() !== (month - 1) || date.getDate() !== day) {
+        return null; // Data inválida
+    }
+    return date;
 };
 
 // Função auxiliar para converter HH:MM para objeto Date (com data arbitrária)
@@ -26,7 +32,7 @@ const parseTimeString = (timeString) => {
 };
 
 
-// --- ATUALIZAÇÃO DO SCHEMA DE VALIDAÇÃO YUP ---
+// --- SCHEMA DE VALIDAÇÃO YUP COMPLETO E ATUALIZADO ---
 const opportunityValidationSchema = Yup.object().shape({
     titulo: Yup.string().required('O nome da ação é obrigatório'),
     tipo_acao: Yup.string().oneOf(
@@ -38,17 +44,24 @@ const opportunityValidationSchema = Yup.object().shape({
     data_inicio: Yup.string()
         .matches(
             /^(0[1-9]|[12][0-9]|3[01])\/(0[1-9]|1[0-2])\/\d{4}$/,
-            'Formato da data de início deve ser DD/MM/AAAA'
+            'Insira uma data válida.' // <--- MENSAGEM ATUALIZADA AQUI!
         )
         .nullable()
         .test(
-            'data-inicio-requerida',
+            'data-inicio-valida-calendario',
+            'Insira uma data de início válida (ex: 29/02 em ano bissexto).',
+            function (value) {
+                if (!value) return true;
+                return parseDateString(value) !== null;
+            }
+        )
+        .test(
+            'data-inicio-requerida-se-termino',
             'Data de início é obrigatória se data/hora de término for preenchida.',
             function (value) {
                 const { data_termino, hora_inicio, hora_termino } = this.parent;
-                // Se qualquer campo de data/hora de término for preenchido, data_inicio é obrigatória
-                if ((data_termino || hora_inicio || hora_termino) && !value) {
-                    return false;
+                if ((data_termino && data_termino.length > 0) || (hora_inicio && hora_inicio.length > 0) || (hora_termino && hora_termino.length > 0)) {
+                    return (value && value.length > 0);
                 }
                 return true;
             }
@@ -57,15 +70,23 @@ const opportunityValidationSchema = Yup.object().shape({
     data_termino: Yup.string()
         .matches(
             /^(0[1-9]|[12][0-9]|3[01])\/(0[1-9]|1[0-2])\/\d{4}$/,
-            'Formato da data de término deve ser DD/MM/AAAA'
+            'Insira uma data válida.' // <--- MENSAGEM ATUALIZADA AQUI!
         )
         .nullable()
         .test(
-            'data-termino-valida',
+            'data-termino-valida-calendario',
+            'Insira uma data de término válida (ex: 31/04 não existe).',
+            function (value) {
+                if (!value) return true;
+                return parseDateString(value) !== null;
+            }
+        )
+        .test(
+            'data-termino-posterior-inicio',
             'Data de término não pode ser anterior à data de início.',
             function (value) {
                 const { data_inicio } = this.parent;
-                if (!value || !data_inicio) { // Se não houver data de término ou início, não valida a ordem
+                if (!value || !data_inicio || parseDateString(value) === null || parseDateString(data_inicio) === null) {
                     return true;
                 }
                 const inicio = parseDateString(data_inicio);
@@ -77,16 +98,15 @@ const opportunityValidationSchema = Yup.object().shape({
     hora_inicio: Yup.string()
         .matches(
             /^([01]\d|2[0-3]):([0-5]\d)$/,
-            'Formato do horário de início deve ser HH:MM (00:00 a 23:59)'
+            'Insira um horário válido.' // Apenas adicionei o formato para clareza
         )
         .nullable()
         .test(
-            'hora-inicio-requerida',
-            'Horário de início é obrigatório se data/hora de término for preenchida.',
+            'hora-inicio-requerida-se-termino',
+            'Horário de início é obrigatório se horário de término for preenchido.',
             function (value) {
-                const { data_termino, hora_termino } = this.parent;
-                // Se data de término ou hora de término for preenchida, hora_inicio é obrigatória
-                if ((data_termino || hora_termino) && !value) {
+                const { hora_termino } = this.parent;
+                if ((hora_termino && hora_termino.length > 0) && (!value || value.length === 0)) {
                     return false;
                 }
                 return true;
@@ -96,27 +116,34 @@ const opportunityValidationSchema = Yup.object().shape({
     hora_termino: Yup.string()
         .matches(
             /^([01]\d|2[0-3]):([0-5]\d)$/,
-            'Formato do horário de término deve ser HH:MM (00:00 a 23:59)'
+            'Insira um horário válido.' // Apenas adicionei o formato para clareza
         )
         .nullable()
         .test(
-            'hora-termino-valida',
-            'Horário de término não pode ser anterior ao horário de início se as datas são as mesmas.',
+            'hora-termino-posterior-inicio-mesmo-dia',
+            'Horário de término deve ser posterior ao de início no mesmo dia.',
             function (value) {
                 const { data_inicio, data_termino, hora_inicio } = this.parent;
 
-                if (!value || !hora_inicio) { // Se não houver hora de término ou início, não valida a ordem
+                if (!value || !hora_inicio) {
                     return true;
                 }
 
-                // Se as datas são as mesmas ou a data de início é a única preenchida
-                if (data_inicio && data_termino && parseDateString(data_inicio).getTime() === parseDateString(data_termino).getTime()) {
-                    const inicio = parseTimeString(hora_inicio);
-                    const termino = parseTimeString(value);
-                    return termino > inicio; // Must be strictly greater for time on the same day
+                const parsedHoraInicio = parseTimeString(hora_inicio);
+                const parsedHoraTermino = parseTimeString(value);
+
+                if (parsedHoraInicio === null || parsedHoraTermino === null) {
+                    return true;
                 }
-                // Se as datas são diferentes, o horário de término pode ser qualquer coisa
-                // ou se apenas a data de início está preenchida, não validamos a ordem de horário aqui
+
+                const parsedDataInicio = parseDateString(data_inicio);
+                const parsedDataTermino = parseDateString(data_termino);
+
+                if (parsedDataInicio && parsedDataTermino &&
+                    parsedDataInicio.getTime() === parsedDataTermino.getTime()) {
+                    return parsedHoraTermino > parsedHoraInicio;
+                }
+                
                 return true;
             }
         ),
