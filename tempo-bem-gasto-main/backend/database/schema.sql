@@ -1,3 +1,5 @@
+-- backend/database/schema.sql
+
 -- ===================================================================
 -- 1) Criação do banco / uso do banco
 -- ===================================================================
@@ -8,80 +10,79 @@ USE site_voluntariado;
 -- 2) Tabela de ONGs
 -- ===================================================================
 CREATE TABLE IF NOT EXISTS ongs (
-    `id`         INT AUTO_INCREMENT PRIMARY KEY,
-    `nome`       VARCHAR(255) NOT NULL UNIQUE,
-    `endereco`   VARCHAR(255)
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    senha VARCHAR(255) NOT NULL,
+    telefone VARCHAR(20),
+    endereco VARCHAR(255),
+    descricao TEXT,
+    data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ===================================================================
--- 3) Tabela de Oportunidades (AGORA COM 'tipo_acao')
+-- 3) Tabela de Oportunidades
 -- ===================================================================
 CREATE TABLE IF NOT EXISTS oportunidades (
-    `id`                INT AUTO_INCREMENT PRIMARY KEY,
-    `data_pub`          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
-    `titulo`            VARCHAR(255) NOT NULL,
-    `descricao`         TEXT         NOT NULL,
-    `ong_id`            INT          NOT NULL,
-    `ong_nome`          VARCHAR(255) NOT NULL,
-    `endereco`          VARCHAR(255),
-    `data_atuacao`      VARCHAR(255),
-    `carga_horaria`     VARCHAR(100),
-    `perfil_voluntario` TEXT,
-    `num_vagas`         INT          DEFAULT NULL,
-    `status_vaga`       ENUM('ativa', 'inativa', 'encerrada', 'em_edicao') DEFAULT 'ativa',
-    `tipo_acao`         VARCHAR(255), -- <<--- ADICIONADO: Nova coluna para o tipo de ação. Use VARCHAR para flexibilidade com o ENUM do frontend.
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ong_id INT NOT NULL,
+    titulo VARCHAR(255) NOT NULL,
+    tipo_acao VARCHAR(100) NULL, -- Tornando 'tipo_acao' NULL, caso não seja sempre obrigatório no frontend
+    endereco VARCHAR(255) NOT NULL,
+    -- Novas colunas para data e hora de início/término
+    data_inicio VARCHAR(10) NULL, -- Ex: DD/MM/AAAA (agora como NULL, pois são opcionais)
+    data_termino VARCHAR(10) NULL, -- Ex: DD/MM/AAAA (agora como NULL, pois são opcionais)
+    hora_inicio VARCHAR(5) NULL,   -- Ex: HH:MM (agora como NULL, pois são opcionais)
+    hora_termino VARCHAR(5) NULL,   -- Ex: HH:MM (agora como NULL, pois são opcionais)
+    perfil_voluntario TEXT,
+    descricao TEXT NOT NULL,
+    num_vagas INT,
+    -- Status da vaga: alinhado com o frontend ('ativa', 'inativa', 'encerrada', 'em_edicao')
+    status_vaga ENUM('ativa', 'inativa', 'encerrada', 'em_edicao') DEFAULT 'ativa',
+    data_publicacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Seu `data_pub` renomeado para `data_publicacao` para consistência
 
-    FOREIGN KEY (`ong_id`) REFERENCES ongs(`id`) ON DELETE CASCADE
+    FOREIGN KEY (ong_id) REFERENCES ongs(id) ON DELETE CASCADE
 );
-
--- Para adicionar a coluna 'tipo_acao' em um banco de dados já existente:
--- ALERTA: Execute o comando abaixo APENAS SE A TABELA 'oportunidades' JÁ EXISTIR NO SEU BANCO DE DADOS
--- E SE A COLUNA 'tipo_acao' AINDA NÃO ESTIVER LÁ.
--- Se você estiver recriando o banco do zero (com um 'docker system prune -a --volumes'), a linha acima 'CREATE TABLE' já cria.
-ALTER TABLE oportunidades ADD COLUMN tipo_acao VARCHAR(255) AFTER status_vaga;
-
 
 -- ===================================================================
 -- 4) Tabela de Voluntários
 -- ===================================================================
 CREATE TABLE IF NOT EXISTS voluntarios (
-    `id`            INT AUTO_INCREMENT PRIMARY KEY,
-    `nome`          VARCHAR(255) NOT NULL,
-    `nascimento`    DATE         NOT NULL,
-    `cpf`           VARCHAR(14)  NOT NULL UNIQUE,
-    `mensagem`      TEXT,
-    `data_cadastro` TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    senha VARCHAR(255) NOT NULL,
+    telefone VARCHAR(20),
+    endereco VARCHAR(255),
+    data_nascimento DATE,
+    cpf VARCHAR(14) UNIQUE,
+    interesses TEXT,
+    disponibilidade TEXT,
+    data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ===================================================================
 -- 5) Tabela de Inscrições
 -- ===================================================================
 CREATE TABLE IF NOT EXISTS inscricoes (
-    `id`             INT AUTO_INCREMENT PRIMARY KEY,
-    `voluntario_id`  INT          NOT NULL,
-    `oportunidade_id` INT          NOT NULL,
-    `data_inscricao` TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
-    `status`         ENUM('pendente','aprovado','rejeitado') NOT NULL DEFAULT 'pendente',
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    oportunidade_id INT NOT NULL,
+    voluntario_id INT NOT NULL,
+    data_inscricao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- Status da inscrição: alinhado com as opções mais comuns
+    status_inscricao ENUM('pendente', 'aprovada', 'rejeitada', 'cancelada') DEFAULT 'pendente',
 
-    FOREIGN KEY (`voluntario_id`) REFERENCES voluntarios(`id`) ON DELETE CASCADE,
-    FOREIGN KEY (`oportunidade_id`) REFERENCES oportunidades(`id`) ON DELETE CASCADE,
-    UNIQUE (`voluntario_id`, `oportunidade_id`)
+    FOREIGN KEY (oportunidade_id) REFERENCES oportunidades(id) ON DELETE CASCADE,
+    FOREIGN KEY (voluntario_id) REFERENCES voluntarios(id) ON DELETE CASCADE,
+    UNIQUE (oportunidade_id, voluntario_id)
 );
 
 -- ===================================================================
--- 6) Dados de exemplo para testes iniciais
+-- 6) Dados de exemplo para testes iniciais (ONG de exemplo mantida)
 -- ===================================================================
-INSERT INTO ongs (nome, endereco)
-VALUES ('Teste ONG', 'Rua Exemplo, 123')
-ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id);
 
-INSERT INTO voluntarios (nome, nascimento, cpf, mensagem)
-VALUES (
-    'TESTE DE OLIVEIRA DA SILVA',
-    '1967-02-19',
-    '11122233344',
-    'Eu sou TESTE'
-);
-
-INSERT INTO inscricoes (voluntario_id, oportunidade_id)
-VALUES (1, 1);
+-- Exemplo para ONG (com email e senha, que são NOT NULL)
+-- Mantemos esta ONG de exemplo para que você possa cadastrar oportunidades via frontend.
+INSERT INTO ongs (nome, email, senha, endereco)
+VALUES ('ONG Amor e Cuidado', 'amor.cuidado@exemplo.com', 'senha_hash_aqui', 'Rua da Solidariedade, 456, São Paulo')
+ON DUPLICATE KEY UPDATE nome = VALUES(nome), email = VALUES(email);

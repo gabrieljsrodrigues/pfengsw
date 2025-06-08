@@ -7,11 +7,52 @@ import {
     deleteOpportunity
 } from '../../services/api';
 import {
-    Card, CardContent, Button, Typography, Grid, // Paper Removido daqui se não for usado
+    Card, CardContent, Button, Typography, Grid,
     CircularProgress, Alert, Box
 } from '@mui/material';
-import { Work } from '@mui/icons-material'; // Edit e Delete Removidos daqui se não forem usados diretamente, mas sim nos botões
+import { Work } from '@mui/icons-material';
 import OportunidadeFormModal from '../../components/OportunidadeFormModal';
+
+// --- FUNÇÃO AUXILIAR PARA FORMATAR DATA E HORA ---
+const formatarDataHoraOportunidade = (oportunidade) => {
+    const { data_inicio, data_termino, hora_inicio, hora_termino } = oportunidade;
+
+    if (!data_inicio && !data_termino && !hora_inicio && !hora_termino) {
+        return "Não informado";
+    }
+
+    let dataPart = "";
+    if (data_inicio && data_termino) {
+        if (data_inicio === data_termino) {
+            dataPart = `${data_inicio}`;
+        } else {
+            dataPart = `${data_inicio} a ${data_termino}`;
+        }
+    } else if (data_inicio) {
+        dataPart = `${data_inicio}`;
+    } else if (data_termino) {
+        dataPart = `até ${data_termino}`;
+    }
+
+    let horaPart = "";
+    if (hora_inicio && hora_termino) {
+        horaPart = `${hora_inicio} às ${hora_termino}`;
+    } else if (hora_inicio) {
+        horaPart = `a partir das ${hora_inicio}`;
+    } else if (hora_termino) {
+        horaPart = `até as ${hora_termino}`;
+    }
+
+    if (dataPart && horaPart) {
+        return `${dataPart} das ${horaPart}`;
+    } else if (dataPart) {
+        return `${dataPart}`;
+    } else if (horaPart) {
+        return `${horaPart}`;
+    }
+    return "Não informado";
+};
+
 
 // Componente principal para Gerenciar Oportunidades.
 export default function GerenciarOportunidades() {
@@ -97,7 +138,7 @@ export default function GerenciarOportunidades() {
 
     // --- Efeito para carregar oportunidades ao montar o componente ---
     useEffect(() => {
-        loadOpportunities();
+    loadOpportunities();
     }, []);
 
     // --- Renderização do Componente ---
@@ -178,14 +219,63 @@ export default function GerenciarOportunidades() {
                                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                                         {opportunity.descricao || 'Sem descrição'}
                                     </Typography>
-                                    {/* Exibir informações no formato do mockup */}
-                                    <Typography variant="body2" color="text.secondary">ONG: {opportunity.ong_nome || 'Não informado'}</Typography>
-                                    <Typography variant="body2" color="text.secondary">Endereço: {opportunity.endereco || 'Não informado'}, {opportunity.tipo_acao || 'Não informado'}</Typography>
-                                    {opportunity.data_atuacao && opportunity.carga_horaria && (
-                                        <Typography variant="body2" color="text.secondary">Data e hora: {opportunity.data_atuacao} {opportunity.carga_horaria}</Typography>
-                                    )}
-                                    <Typography variant="body2" color="text.secondary">Perfil do voluntário: {opportunity.perfil_voluntario || 'Não informado'}</Typography>
-                                    <Typography variant="body2" color="text.secondary">Número de vagas: {opportunity.num_vagas || 'Não informado'}</Typography>
+
+                                    {/* --- ALINHAMENTO DE DOIS LADOS PARA DETALHES --- */}
+                                    {/* ONG */}
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <Typography variant="body2" component="span" sx={{ fontWeight: 'bold', mr: 1, whiteSpace: 'nowrap' }}>
+                                            ONG:
+                                        </Typography>
+                                        <Typography variant="body2" component="span" color="text.secondary" sx={{ textAlign: 'right', flexShrink: 1 }}>
+                                            {opportunity.ong_nome || 'Não informado'}
+                                        </Typography>
+                                    </Box>
+                                    {/* Tipo de Ação (LINHA EXCLUSIVA) */}
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <Typography variant="body2" component="span" sx={{ fontWeight: 'bold', mr: 1, whiteSpace: 'nowrap' }}>
+                                            Tipo de Ação:
+                                        </Typography>
+                                        <Typography variant="body2" component="span" color="text.secondary" sx={{ textAlign: 'right', flexShrink: 1 }}>
+                                            {opportunity.tipo_acao || 'Não informado'}
+                                        </Typography>
+                                    </Box>
+                                    {/* Endereço (AGORA SEM O TIPO DE AÇÃO) */}
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <Typography variant="body2" component="span" sx={{ fontWeight: 'bold', mr: 1, whiteSpace: 'nowrap' }}>
+                                            Endereço:
+                                        </Typography>
+                                        <Typography variant="body2" component="span" color="text.secondary" sx={{ textAlign: 'right', flexShrink: 1 }}>
+                                            {opportunity.endereco || 'Não informado'}
+                                        </Typography>
+                                    </Box>
+                                    {/* Data e Hora (usando a nova função de formatação) */}
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <Typography variant="body2" component="span" sx={{ fontWeight: 'bold', mr: 1, whiteSpace: 'nowrap' }}>
+                                            Data e hora:
+                                        </Typography>
+                                        <Typography variant="body2" component="span" color="text.secondary" sx={{ textAlign: 'right', flexShrink: 1 }}>
+                                            {formatarDataHoraOportunidade(opportunity)}
+                                        </Typography>
+                                    </Box>
+                                    {/* Perfil do Voluntário */}
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <Typography variant="body2" component="span" sx={{ fontWeight: 'bold', mr: 1, whiteSpace: 'nowrap' }}>
+                                            Perfil do voluntário:
+                                        </Typography>
+                                        <Typography variant="body2" component="span" color="text.secondary" sx={{ textAlign: 'right', flexShrink: 1 }}>
+                                            {opportunity.perfil_voluntario || 'Não informado'}
+                                        </Typography>
+                                    </Box>
+                                    {/* Número de vagas */}
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <Typography variant="body2" component="span" sx={{ fontWeight: 'bold', mr: 1, whiteSpace: 'nowrap' }}>
+                                            Número de vagas:
+                                        </Typography>
+                                        <Typography variant="body2" component="span" color="text.secondary" sx={{ textAlign: 'right', flexShrink: 1 }}>
+                                            {opportunity.num_vagas || 'Não informado'}
+                                        </Typography>
+                                    </Box>
+                                    {/* --- FIM DO ALINHAMENTO DE DOIS LADOS --- */}
 
                                     {/* Botão Editar Oportunidade no rodapé do card */}
                                     <Button

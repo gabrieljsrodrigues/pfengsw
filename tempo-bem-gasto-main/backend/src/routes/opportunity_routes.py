@@ -2,7 +2,11 @@
 
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.responses import JSONResponse
-from ..models import OportunidadeONG, OportunidadeUpdate # Certifique-se que OportunidadeONG e OportunidadeUpdate têm 'tipo_acao'
+from typing import List # Essencial para o 'response_model=List[...]'
+from datetime import datetime # Necessário para o tipo datetime em OportunidadeResponse
+
+# Importar os modelos corretos
+from ..models import OportunidadeONG, OportunidadeUpdate, OportunidadeResponse
 from ..database import get_connection
 
 # Define o roteador para oportunidades.
@@ -15,36 +19,57 @@ router = APIRouter(
 # Endpoints de Oportunidades
 # =========================================================
 
-@router.get("/") # Rota espera '/oportunidades/'
+@router.get("/", response_model=List[OportunidadeResponse]) # Rota espera '/oportunidades/'
 async def consultar_oportunidades():
     """
     Endpoint GET para listar todas as oportunidades.
-    CORRIGIDO: Agora seleciona o tipo_acao.
+    AGORA INCLUI OS NOVOS CAMPOS DE DATA E HORA E FAZ JOIN PARA ong_nome.
     """
     conn = None
     try:
         conn = get_connection()
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id, data_pub, titulo, descricao, ong_id, ong_nome, endereco, data_atuacao, carga_horaria, perfil_voluntario, num_vagas, status_vaga, tipo_acao FROM oportunidades")
+            # CORRIGIDO: SELECT com JOIN para obter ong_nome
+            cursor.execute("""
+                SELECT
+                    o.id, o.data_publicacao, o.titulo, o.descricao, o.ong_id,
+                    ongs.nome AS ong_nome, -- Obtém o nome da ONG da tabela 'ongs'
+                    o.endereco,
+                    o.data_inicio, o.data_termino, o.hora_inicio, o.hora_termino,
+                    o.perfil_voluntario, o.num_vagas, o.status_vaga, o.tipo_acao
+                FROM oportunidades o
+                JOIN ongs ON o.ong_id = ongs.id
+            """)
             return cursor.fetchall()
     except Exception as e:
         print(f"DEBUG BACKEND: Erro ao consultar oportunidades: {e}")
-        return JSONResponse({"error": str(e)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     finally:
         if conn:
             conn.close()
 
-@router.get("/{oportunidade_id}/") # Rota espera '/oportunidades/{id}/'
+@router.get("/{oportunidade_id}/", response_model=OportunidadeResponse) # Rota espera '/oportunidades/{id}/'
 async def consultar_oportunidade(oportunidade_id: int):
     """
     Endpoint GET para recuperar uma única oportunidade.
-    CORRIGIDO: Também adiciona tipo_acao para consulta por ID.
+    AGORA INCLUI OS NOVOS CAMPOS DE DATA E HORA E FAZ JOIN PARA ong_nome.
     """
     conn = None
     try:
         conn = get_connection()
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id, data_pub, titulo, descricao, ong_id, ong_nome, endereco, data_atuacao, carga_horaria, perfil_voluntario, num_vagas, status_vaga, tipo_acao FROM oportunidades WHERE id = %s", (oportunidade_id,))
+            # CORRIGIDO: SELECT com JOIN para obter ong_nome
+            cursor.execute("""
+                SELECT
+                    o.id, o.data_publicacao, o.titulo, o.descricao, o.ong_id,
+                    ongs.nome AS ong_nome, -- Obtém o nome da ONG da tabela 'ongs'
+                    o.endereco,
+                    o.data_inicio, o.data_termino, o.hora_inicio, o.hora_termino,
+                    o.perfil_voluntario, o.num_vagas, o.status_vaga, o.tipo_acao
+                FROM oportunidades o
+                JOIN ongs ON o.ong_id = ongs.id
+                WHERE o.id = %s
+            """, (oportunidade_id,))
             resultado = cursor.fetchone()
             if not resultado:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Oportunidade não encontrada")
@@ -53,85 +78,125 @@ async def consultar_oportunidade(oportunidade_id: int):
         raise he
     except Exception as e:
         print(f"DEBUG BACKEND: Erro ao consultar oportunidade por ID: {e}")
-        return JSONResponse({"error": str(e)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     finally:
         if conn:
             conn.close()
 
-@router.post("/") # Rota espera '/oportunidades/'
+@router.post("/", response_model=dict, status_code=status.HTTP_201_CREATED) # Rota espera '/oportunidades/'
 async def criar_oportunidade(dados: OportunidadeONG):
     """
     Endpoint POST para criar uma nova oportunidade.
-    CORRIGIDO: Lógica para obter ong_id para evitar SyntaxError.
-    CORRIGIDO: Insere tipo_acao no banco de dados.
+    AGORA INCLUI OS NOVOS CAMPOS DE DATA E HORA.
     """
     conn = None
     try:
         conn = get_connection()
         with conn.cursor() as cursor:
-            # Insere ou atualiza a ONG e tenta pegar o ID
-            cursor.execute(
-                "INSERT INTO ongs (nome, endereco) VALUES (%s, %s) "
-                "ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), nome = VALUES(nome)", # Use VALUES(nome) para evitar erro no MySQL 8+
-                (dados.ong_nome, dados.endereco)
-            )
-            ong_id = cursor.lastrowid # Tenta pegar o ID da última inserção
+            # A lógica de inserção da ONG e obtenção do ong_id permanece a mesma.
+            # O nome da ONG é enviado pelo frontend, mas não é armazenado na tabela 'oportunidades' diretamente.
+            # Em vez disso, usamos 'ong_id' para referenciar a tabela 'ongs'.
+            # A coluna `ong_nome` na tabela `oportunidades` no seu esquema SQL inicial
+            # não existe no esquema mais recente que eu te dei.
+            # Para criar uma oportunidade, precisamos apenas do ong_id.
+            # O `dados.ong_nome` do Pydantic `OportunidadeONG` ainda é útil para
+            # a lógica de `ON DUPLICATE KEY UPDATE` ou para verificar a existência da ONG.
+            
+            # 1. Tenta encontrar a ONG pelo nome
+            cursor.execute("SELECT id FROM ongs WHERE nome = %s", (dados.ong_nome,))
+            existing_ong = cursor.fetchone()
+            ong_id = None
+            if existing_ong:
+                ong_id = existing_ong['id']
+            else:
+                # Se a ONG não existe, você precisa decidir:
+                # a) Criar a ONG aqui? (Isso exigiria mais campos como email, senha)
+                # b) Retornar um erro dizendo que a ONG não foi encontrada?
+                # Por simplicidade e dada a lógica existente, vamos inserir se não existir
+                # com os campos mínimos que o frontend envia para a ONG (nome, endereco).
+                # Note: O schema.sql mais recente para 'ongs' exige 'email' e 'senha'.
+                # A melhor abordagem seria exigir o `ong_id` na payload de criação da oportunidade
+                # e que a ONG já esteja cadastrada/autenticada.
+                # No seu caso atual, onde `ongs` tem `nome` e `endereco` no schema.sql
+                # que me forneceu anteriormente, podemos tentar criar se não existir.
+                # Considerando o schema.sql que te dei por último, 'ongs' exige 'email' e 'senha'.
+                # Então, o mais seguro é **exigir que a ONG já exista e buscar seu ID**.
+                # Se o frontend realmente manda apenas `ong_nome` e `endereco`, a criação da ONG
+                # deveria ser um endpoint separado (registro de ONG).
+                
+                # Para prosseguir, vamos assumir que a ONG já deve existir e buscar por nome.
+                # Se ela não for encontrada e você tiver o schema com email/senha obrigatórios para ONG,
+                # este INSERT abaixo falharia.
+                
+                # Se a ONG não existe, este bloco será um problema com o schema mais recente (email e senha NOT NULL)
+                # O mais seguro é que a ONG seja criada ANTES, e você passe o ong_id ou um campo unico como email.
+                # Por ora, mantemos a lógica que tenta buscar/criar, mas ciente da limitação com o novo schema de ONGs.
+                print(f"DEBUG BACKEND: ONG '{dados.ong_nome}' não encontrada. Tentando inserção/duplicata.")
+                cursor.execute(
+                    "INSERT INTO ongs (nome, endereco, email, senha) VALUES (%s, %s, %s, %s) "
+                    "ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), nome = VALUES(nome)",
+                    (dados.ong_nome, dados.endereco, f"{dados.ong_nome.lower().replace(' ', '')}@temp.com", "temp_pass") # Valores dummy para email/senha se a ONG não existe
+                )
+                ong_id = cursor.lastrowid
+                if not ong_id: # Caso não tenha inserido e nem pego ID
+                     cursor.execute("SELECT id FROM ongs WHERE nome = %s", (dados.ong_nome,))
+                     existing_ong_after_insert = cursor.fetchone()
+                     if existing_ong_after_insert:
+                         ong_id = existing_ong_after_insert['id']
+                     else:
+                        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Erro interno: Não foi possível obter ID da ONG ou criar ONG padrão.")
 
-            # Se a ONG já existia e não foi inserida agora, precisamos buscar o ID dela
-            if not ong_id:
-                cursor.execute("SELECT id FROM ongs WHERE nome = %s", (dados.ong_nome,))
-                existing_ong = cursor.fetchone()
-                if existing_ong:
-                    ong_id = existing_ong['id']
-                else:
-                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Erro interno: Não foi possível obter ID da ONG.")
-
-            # Insere a oportunidade AGORA COM 'tipo_acao'
+            # Insere a oportunidade com todos os campos
             cursor.execute(
                 """INSERT INTO oportunidades
-                (titulo, descricao, ong_id, ong_nome, endereco, data_atuacao, carga_horaria, perfil_voluntario, num_vagas, status_vaga, tipo_acao)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", # 11 %s agora
+                (titulo, descricao, ong_id, endereco,
+                 data_inicio, data_termino, hora_inicio, hora_termino,
+                 perfil_voluntario, num_vagas, status_vaga, tipo_acao)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", # 12 %s agora
                 (
-                    dados.titulo, dados.descricao, ong_id, dados.ong_nome, dados.endereco,
-                    dados.data_atuacao, dados.carga_horaria, dados.perfil_voluntario,
-                    dados.num_vagas, dados.status_vaga, dados.tipo_acao # <<--- ADICIONADO: dados.tipo_acao
+                    dados.titulo, dados.descricao, ong_id, dados.endereco, # REMOVIDO dados.ong_nome daqui
+                    dados.data_inicio, dados.data_termino, dados.hora_inicio, dados.hora_termino,
+                    dados.perfil_voluntario, dados.num_vagas, dados.status_vaga, dados.tipo_acao
                 )
             )
             conn.commit()
             return {"success": True, "id": cursor.lastrowid}
+    except HTTPException as he:
+        raise he
     except Exception as e:
         if conn:
             conn.rollback()
         print(f"DEBUG BACKEND: Erro ao criar oportunidade: {e}")
-        return JSONResponse({"error": str(e)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     finally:
         if conn:
             conn.close()
 
-@router.put("/{oportunidade_id}/") # Rota espera '/oportunidades/{id}/'
+@router.put("/{oportunidade_id}/", response_model=dict) # Rota espera '/oportunidades/{id}/'
 async def atualizar_oportunidade_completa(oportunidade_id: int, dados: OportunidadeONG):
     """
     Endpoint PUT para atualizar oportunidade completa.
-    CORRIGIDO: Inclui tipo_acao no UPDATE.
+    AGORA INCLUI OS NOVOS CAMPOS DE DATA E HORA.
     """
     print(f"DEBUG BACKEND: Recebido PUT para oportunidade_id: {oportunidade_id}")
-    print(f"DEBUG BACKEND: Dados recebidos: {dados.dict()}")
+    print(f"DEBUG BACKEND: Dados recebidos: {dados.model_dump()}")
 
     conn = None
     try:
         conn = get_connection()
         with conn.cursor() as cursor:
-            # CORRIGIDO: Inclui tipo_acao no UPDATE
+            # CORRIGIDO: Inclui novos campos de data e hora no UPDATE
+            # REMOVIDO ong_nome do UPDATE, pois não é uma coluna em 'oportunidades'
             cursor.execute(
                 """UPDATE oportunidades SET
-                titulo = %s, descricao = %s, ong_nome = %s, endereco = %s,
-                data_atuacao = %s, carga_horaria = %s, perfil_voluntario = %s,
-                num_vagas = %s, status_vaga = %s, tipo_acao = %s
+                titulo = %s, descricao = %s, endereco = %s,
+                data_inicio = %s, data_termino = %s, hora_inicio = %s, hora_termino = %s,
+                perfil_voluntario = %s, num_vagas = %s, status_vaga = %s, tipo_acao = %s
                 WHERE id = %s""", # 11 campos a atualizar agora
                 (
-                    dados.titulo, dados.descricao, dados.ong_nome, dados.endereco,
-                    dados.data_atuacao, dados.carga_horaria, dados.perfil_voluntario,
-                    dados.num_vagas, dados.status_vaga, dados.tipo_acao, # <<--- ADICIONADO: dados.tipo_acao
+                    dados.titulo, dados.descricao, dados.endereco,
+                    dados.data_inicio, dados.data_termino, dados.hora_inicio, dados.hora_termino,
+                    dados.perfil_voluntario, dados.num_vagas, dados.status_vaga, dados.tipo_acao,
                     oportunidade_id
                 )
             )
@@ -146,16 +211,16 @@ async def atualizar_oportunidade_completa(oportunidade_id: int, dados: Oportunid
         if conn:
             conn.rollback()
         print(f"DEBUG BACKEND: Erro ao atualizar oportunidade (PUT): {e}")
-        return JSONResponse({"error": str(e)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     finally:
         if conn:
             conn.close()
 
-@router.patch("/{oportunidade_id}/") # Rota espera '/oportunidades/{id}/'
+@router.patch("/{oportunidade_id}/", response_model=dict) # Rota espera '/oportunidades/{id}/'
 async def atualizar_oportunidade_parcial(oportunidade_id: int, dados: OportunidadeUpdate):
     """
     Endpoint PATCH para atualizar oportunidade parcial.
-    CORRIGIDO: 'tipo_acao' agora PODE ser atualizado.
+    AGORA INCLUI OS NOVOS CAMPOS DE DATA E HORA.
     """
     conn = None
     try:
@@ -166,17 +231,27 @@ async def atualizar_oportunidade_parcial(oportunidade_id: int, dados: Oportunida
             if not oportunidade_existente:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Oportunidade não encontrada")
 
-            updates = {k: v for k, v in dados.dict(exclude_unset=True).items()}
+            # Use .model_dump() com exclude_unset=True para Pydantic v2
+            updates = {k: v for k, v in dados.model_dump(exclude_unset=True).items()}
+            
             if not updates:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nenhum campo para atualizar")
 
             set_clauses = []
             values = []
             for field, value in updates.items():
-                # CORRIGIDO: REMOVIDO 'if field not in ['tipo_acao']', AGORA tipo_acao PODE SER ATUALIZADO
+                # Se o campo ong_nome for enviado no PATCH, ele não é uma coluna direta em 'oportunidades'.
+                # Precisaríamos de uma lógica separada para atualizar a ONG ou ignorá-lo aqui.
+                # Por enquanto, se ele aparecer no updates, será ignorado para o UPDATE na tabela 'oportunidades'.
+                if field == 'ong_nome':
+                    continue # Ignora ong_nome para o UPDATE da tabela oportunidades
+
                 set_clauses.append(f"{field} = %s")
                 values.append(value)
             
+            if not set_clauses: # Caso só tenha enviado ong_nome e ele foi ignorado
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nenhum campo válido para atualizar")
+
             query = f"UPDATE oportunidades SET {', '.join(set_clauses)} WHERE id = %s"
             values.append(oportunidade_id)
 
@@ -191,7 +266,7 @@ async def atualizar_oportunidade_parcial(oportunidade_id: int, dados: Oportunida
         if conn:
             conn.rollback()
         print(f"DEBUG BACKEND: Erro ao atualizar oportunidade (PATCH): {e}")
-        return JSONResponse({"error": str(e)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     finally:
         if conn:
             conn.close()
@@ -209,14 +284,15 @@ async def deletar_oportunidade(oportunidade_id: int):
             if cursor.rowcount == 0:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Oportunidade não encontrada")
             conn.commit()
-            return {"success": True}
+            # Retornar None para 204 No Content é o mais comum, mas {"success": True} também funciona
+            return None
     except HTTPException as he:
         raise he
     except Exception as e:
         if conn:
             conn.rollback()
         print(f"DEBUG BACKEND: Erro ao deletar oportunidade: {e}")
-        return JSONResponse({"error": str(e)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     finally:
         if conn:
             conn.close()
